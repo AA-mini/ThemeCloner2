@@ -1,0 +1,45 @@
+ticker,yf_ticker,theme,type,description
+BOTZ,BOTZ,Robotics & AI,theme,Global X Robotics & AI ETF
+ROBO,ROBO,Robotics & AI,theme,ROBO Global Robotics & Automation ETF
+IRBO,IRBO,Robotics & AI,theme,iShares Robotics & AI Multisector ETF
+IGPT,IGPT,AI Infrastructure,theme,iShares Exponential Technologies ETF
+QTUM,QTUM,AI Infrastructure,theme,Defiance Quantum ETF
+SOXX,SOXX,AI Infrastructure,theme,iShares Semiconductor ETF
+ICLN,ICLN,Clean Energy,theme,iShares Global Clean Energy ETF
+QCLN,QCLN,Clean Energy,theme,First Trust NASDAQ Clean Edge Green Energy ETF
+PBW,PBW,Clean Energy,theme,Invesco WilderHill Clean Energy ETF
+CIBR,CIBR,Cybersecurity,theme,First Trust NASDAQ Cybersecurity ETF
+HACK,HACK,Cybersecurity,theme,Amplify Cybersecurity ETF
+BUG,BUG,Cybersecurity,theme,Global X Cybersecurity ETF
+ITA,ITA,Defense,theme,iShares US Aerospace & Defense ETF
+PPA,PPA,Defense,theme,Invesco Aerospace & Defense ETF
+XAR,XAR,Defense,theme,SPDR S&P Aerospace & Defense ETF
+FINX,FINX,Fintech,theme,Global X FinTech ETF
+ARKF,ARKF,Fintech,theme,ARK Fintech Innovation ETF
+IPAY,IPAY,Fintech,theme,ETFMG Prime Mobile Payments ETF
+PAVE,PAVE,US Infrastructure,theme,Global X US Infrastructure Development ETF
+IFRA,IFRA,US Infrastructure,theme,iShares US Infrastructure ETF
+MOO,MOO,Agribusiness,theme,VanEck Agribusiness ETF
+VEGI,VEGI,Agribusiness,theme,iShares MSCI Agriculture Producers ETF
+PBJ,PBJ,Agribusiness,theme,Invesco Food & Beverage ETF
+URA,URA,Critical Minerals,theme,Global X Uranium ETF
+LIT,LIT,Critical Minerals,theme,Global X Lithium & Battery Tech ETF
+COPX,COPX,Critical Minerals,theme,Global X Copper Miners ETF
+PHO,PHO,Water,theme,Invesco Water Resources ETF
+FIW,FIW,Water,theme,First Trust Water ETF
+CGW,CGW,Water,theme,Invesco S&P Global Water Index ETF
+WOOD,WOOD,Timber & Forestry,theme,iShares Global Timber & Forestry ETF
+CUT,CUT,Timber & Forestry,theme,Invesco MSCI Global Timber ETF
+XLF,XLF,SECTOR: US Financials,sector,Financial Select Sector SPDR
+XLK,XLK,SECTOR: US Technology,sector,Technology Select Sector SPDR
+XLE,XLE,SECTOR: US Energy,sector,Energy Select Sector SPDR
+KRE,KRE,SUBSECTOR: US Banks,subsector,SPDR S&P Regional Banking ETF
+IGV,IGV,SUBSECTOR: US Software,subsector,iShares Expanded Tech-Software ETF
+XBI,XBI,SUBSECTOR: US Biotech,subsector,SPDR S&P Biotech ETF
+IUSG,IUSG,Factor1,factor,iShares Core S&P U.S. Growth ETF
+VLUE,VLUE,Factor2,factor,iShares MSCI USA Value Factor ETF
+QUAL,QUAL,Factor3,factor,iShares MSCI USA Quality Factor ETF
+SPGP,SPGP,Factor4,factor,Invesco S&P 500 GARP ETF
+MTUM,MTUM,Factor5,factor,iShares MSCI USA Momentum Factor ETF
+VUG,VUG,Factor6,factor,Vanguard Growth ETF
+VTV,VTV,Factor7,factor,Vanguard Value ETF

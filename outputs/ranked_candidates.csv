@@ -1,0 +1,301 @@
+theme,rank,ticker,score
+Robotics & AI,1,OEC,0.687
+Robotics & AI,2,MSC,0.6333
+Robotics & AI,3,CMCO,0.6151
+Robotics & AI,4,NVEC,0.5933
+Robotics & AI,5,SILC,0.5843
+Robotics & AI,6,ELDN,0.5763
+Robotics & AI,7,MX,0.5745
+Robotics & AI,8,CVGI,0.5712
+Robotics & AI,9,IIIN,0.5576
+Robotics & AI,10,DQ,0.5447
+Robotics & AI,11,GSIT,0.5191
+Robotics & AI,12,NC,0.5123
+Robotics & AI,13,NX,0.5084
+Robotics & AI,14,HY,0.503
+Robotics & AI,15,ATOM,0.4902
+Robotics & AI,16,ONCY,0.49
+Robotics & AI,17,TATT,0.4863
+Robotics & AI,18,ASA,0.471
+Robotics & AI,19,ERII,0.4642
+Robotics & AI,20,MITK,0.4582
+Robotics & AI,21,VREX,0.4578
+Robotics & AI,22,JKS,0.4549
+Robotics & AI,23,ALOT,0.4485
+Robotics & AI,24,CSIQ,0.4404
+Robotics & AI,25,PNRG,0.4315
+Robotics & AI,26,PKOH,0.4292
+Robotics & AI,27,KRO,0.4275
+Robotics & AI,28,ASPN,0.4256
+Robotics & AI,29,RELL,0.4246
+Robotics & AI,30,HURC,0.4244
+AI Infrastructure,1,HFBL,0.6497
+AI Infrastructure,2,MX,0.6454
+AI Infrastructure,3,QUIK,0.6285
+AI Infrastructure,4,SLGL,0.6283
+AI Infrastructure,5,CMTL,0.6181
+AI Infrastructure,6,NVEC,0.5961
+AI Infrastructure,7,VREX,0.5881
+AI Infrastructure,8,ARL,0.5772
+AI Infrastructure,9,QMCO,0.565
+AI Infrastructure,10,ELTK,0.5567
+AI Infrastructure,11,CERS,0.5492
+AI Infrastructure,12,XMAX,0.5447
+AI Infrastructure,13,RCMT,0.5189
+AI Infrastructure,14,DLHC,0.5151
+AI Infrastructure,15,ATOM,0.502
+AI Infrastructure,16,MBOT,0.498
+AI Infrastructure,17,LINK,0.4786
+AI Infrastructure,18,AIOT,0.4763
+AI Infrastructure,19,SILC,0.4739
+AI Infrastructure,20,ULBI,0.4722
+AI Infrastructure,21,NEWT,0.4681
+AI Infrastructure,22,GSIT,0.4638
+AI Infrastructure,23,MVIS,0.4633
+AI Infrastructure,24,WFCF,0.4587
+AI Infrastructure,25,CSIQ,0.4576
+AI Infrastructure,26,GHI,0.4516
+AI Infrastructure,27,GNSS,0.4503
+AI Infrastructure,28,ALOT,0.4436
+AI Infrastructure,29,ALLT,0.4435
+AI Infrastructure,30,CLNN,0.4395
+Clean Energy,1,BLNK,0.6788
+Clean Energy,2,CSIQ,0.673
+Clean Energy,3,HDSN,0.6558
+Clean Energy,4,MRAM,0.6518
+Clean Energy,5,CVV,0.647
+Clean Energy,6,ASPN,0.6462
+Clean Energy,7,CODA,0.642
+Clean Energy,8,ASYS,0.6287
+Clean Energy,9,DQ,0.6273
+Clean Energy,10,UXIN,0.6224
+Clean Energy,11,LITB,0.6069
+Clean Energy,12,PACB,0.5838
+Clean Energy,13,BTBT,0.554
+Clean Energy,14,FF,0.5449
+Clean Energy,15,OEC,0.5396
+Clean Energy,16,PALI,0.5387
+Clean Energy,17,CLFD,0.5385
+Clean Energy,18,MVST,0.5376
+Clean Energy,19,ASA,0.53
+Clean Energy,20,JKS,0.5213
+Clean Energy,21,AEC,0.5185
+Clean Energy,22,METC,0.5177
+Clean Energy,23,QMCO,0.5099
+Clean Energy,24,VHI,0.5079
+Clean Energy,25,OSS,0.5065
+Clean Energy,26,KXIN,0.4998
+Clean Energy,27,XTIA,0.4917
+Clean Energy,28,KOPN,0.4874
+Clean Energy,29,SCZM,0.4823
+Clean Energy,30,BNED,0.4708
+Cybersecurity,1,ELTK,0.8472
+Cybersecurity,2,III,0.8026
+Cybersecurity,3,BOC,0.7842
+Cybersecurity,4,EGAN,0.7718
+Cybersecurity,5,MVIS,0.743
+Cybersecurity,6,HFBL,0.7127
+Cybersecurity,7,RPD,0.6981
+Cybersecurity,8,MNSB,0.6958
+Cybersecurity,9,PAYS,0.6875
+Cybersecurity,10,GCBC,0.6491
+Cybersecurity,11,ANGI,0.6374
+Cybersecurity,12,DMRC,0.6307
+Cybersecurity,13,CMTL,0.6258
+Cybersecurity,14,AUDC,0.608
+Cybersecurity,15,PD,0.6051
+Cybersecurity,16,WNEB,0.6021
+Cybersecurity,17,THRY,0.5993
+Cybersecurity,18,MAKO,0.5981
+Cybersecurity,19,MRDN,0.5816
+Cybersecurity,20,NFE,0.5812
+Cybersecurity,21,EGHT,0.5782
+Cybersecurity,22,ULBI,0.5769
+Cybersecurity,23,GNSS,0.5711
+Cybersecurity,24,FMAO,0.5664
+Cybersecurity,25,XMAX,0.5566
+Cybersecurity,26,MBOT,0.5556
+Cybersecurity,27,SLGL,0.5483
+Cybersecurity,28,MX,0.5469
+Cybersecurity,29,CABO,0.5449
+Cybersecurity,30,KVHI,0.5445
+Defense,1,RDCM,0.679
+Defense,2,AEYE,0.6764
+Defense,3,MITK,0.6587
+Defense,4,TATT,0.6553
+Defense,5,MRDN,0.6524
+Defense,6,ISSC,0.6435
+Defense,7,EBF,0.62
+Defense,8,ELDN,0.6122
+Defense,9,GSIT,0.6013
+Defense,10,TG,0.5881
+Defense,11,BSVN,0.5612
+Defense,12,LND,0.5545
+Defense,13,SILC,0.5533
+Defense,14,DCTH,0.5525
+Defense,15,NC,0.5495
+Defense,16,BFST,0.5493
+Defense,17,OSS,0.546
+Defense,18,PKOH,0.5438
+Defense,19,SCZM,0.5434
+Defense,20,BAK,0.5389
+Defense,21,STKS,0.5344
+Defense,22,NFE,0.5253
+Defense,23,EAF,0.5168
+Defense,24,BH,0.5129
+Defense,25,PKE,0.5115
+Defense,26,FWRD,0.507
+Defense,27,NRIM,0.5068
+Defense,28,CMCO,0.5041
+Defense,29,FEIM,0.5002
+Defense,30,HURC,0.4968
+Fintech,1,DOMO,0.7963
+Fintech,2,ANGI,0.7397
+Fintech,3,RPAY,0.7029
+Fintech,4,PERI,0.6825
+Fintech,5,PRAA,0.6747
+Fintech,6,IIIV,0.6507
+Fintech,7,FLL,0.6438
+Fintech,8,PAYS,0.6405
+Fintech,9,VRRM,0.6357
+Fintech,10,RSSS,0.6313
+Fintech,11,RPD,0.6301
+Fintech,12,HSDT,0.6262
+Fintech,13,RM,0.6252
+Fintech,14,RC,0.6186
+Fintech,15,YEXT,0.6131
+Fintech,16,DAVA,0.6109
+Fintech,17,LTRX,0.59
+Fintech,18,OSG,0.5743
+Fintech,19,PD,0.5721
+Fintech,20,EDSA,0.5562
+Fintech,21,THRY,0.5516
+Fintech,22,TPVG,0.5477
+Fintech,23,GLAD,0.545
+Fintech,24,TZOO,0.5384
+Fintech,25,CHGG,0.5294
+Fintech,26,CNNE,0.5217
+Fintech,27,GTN,0.519
+Fintech,28,INSE,0.5154
+Fintech,29,CCLD,0.5078
+Fintech,30,NCMI,0.4992
+US Infrastructure,1,NVEC,0.5917
+US Infrastructure,2,APOG,0.5617
+US Infrastructure,3,MTRX,0.524
+US Infrastructure,4,CWCO,0.5153
+US Infrastructure,5,ESOA,0.5076
+US Infrastructure,6,DCTH,0.4452
+US Infrastructure,7,ERII,0.435
+US Infrastructure,8,ALOT,0.4281
+US Infrastructure,9,IIIN,0.4242
+US Infrastructure,10,STRS,0.4145
+US Infrastructure,11,PMTS,0.4049
+Agribusiness,1,ULH,0.6552
+Agribusiness,2,PALI,0.6427
+Agribusiness,3,FF,0.6204
+Agribusiness,4,SXC,0.6145
+Agribusiness,5,AREC,0.603
+Agribusiness,6,MGPI,0.5963
+Agribusiness,7,GSM,0.5886
+Agribusiness,8,UXIN,0.5476
+Agribusiness,9,TWI,0.5201
+Agribusiness,10,MTUS,0.5155
+Agribusiness,11,CHCI,0.5141
+Agribusiness,12,LWAY,0.5115
+Agribusiness,13,OEC,0.4949
+Agribusiness,14,CVV,0.4938
+Agribusiness,15,IPI,0.4889
+Agribusiness,16,TLSA,0.4876
+Agribusiness,17,TITN,0.4874
+Agribusiness,18,ASC,0.483
+Agribusiness,19,TK,0.4798
+Agribusiness,20,MSC,0.477
+Agribusiness,21,OTLK,0.4656
+Agribusiness,22,KZIA,0.4612
+Agribusiness,23,LND,0.4547
+Agribusiness,24,TAYD,0.4507
+Agribusiness,25,SWBI,0.446
+Agribusiness,26,FTEK,0.4441
+Agribusiness,27,AIRT,0.4433
+Agribusiness,28,NFE,0.4307
+Agribusiness,29,XTIA,0.4251
+Agribusiness,30,CLNE,0.4177
+Critical Minerals,1,AEC,0.7684
+Critical Minerals,2,NGEN,0.7642
+Critical Minerals,3,LGO,0.7336
+Critical Minerals,4,VHI,0.7298
+Critical Minerals,5,SCZM,0.7227
+Critical Minerals,6,TWIN,0.7187
+Critical Minerals,7,EU,0.707
+Critical Minerals,8,HYFT,0.701
+Critical Minerals,9,ASA,0.6993
+Critical Minerals,10,SIGA,0.6514
+Critical Minerals,11,ACHV,0.6304
+Critical Minerals,12,OCGN,0.6302
+Critical Minerals,13,DQ,0.6281
+Critical Minerals,14,SXTC,0.6186
+Critical Minerals,15,MTUS,0.6156
+Critical Minerals,16,CSIQ,0.6112
+Critical Minerals,17,METC,0.609
+Critical Minerals,18,ANIX,0.6075
+Critical Minerals,19,BWEN,0.6025
+Critical Minerals,20,SMID,0.5995
+Critical Minerals,21,GBLI,0.5906
+Critical Minerals,22,SUPV,0.5861
+Critical Minerals,23,PACB,0.586
+Critical Minerals,24,BTBT,0.5784
+Critical Minerals,25,OEC,0.578
+Critical Minerals,26,MAYS,0.5777
+Critical Minerals,27,CODA,0.5657
+Critical Minerals,28,SLSN,0.5652
+Critical Minerals,29,BZUN,0.5599
+Critical Minerals,30,UXIN,0.5552
+Water,1,MHNC,0.5117
+Water,2,CLPT,0.4999
+Water,3,OEC,0.4743
+Water,4,ASA,0.4726
+Water,5,QTRX,0.4692
+Water,6,FPH,0.4562
+Water,7,PMN,0.4517
+Water,8,CMCO,0.4289
+Water,9,RIGL,0.4251
+Water,10,SCZM,0.4231
+Water,11,GHI,0.4226
+Water,12,GWRS,0.4221
+Water,13,NGEN,0.4142
+Water,14,RLMD,0.4097
+Water,15,GBLI,0.4042
+Water,16,EVO,0.403
+Water,17,EU,0.4024
+Water,18,MATV,0.402
+Water,19,TIPT,0.4011
+Timber & Forestry,1,SUPV,0.6947
+Timber & Forestry,2,EU,0.671
+Timber & Forestry,3,OEC,0.6624
+Timber & Forestry,4,HYFT,0.6615
+Timber & Forestry,5,VHI,0.6567
+Timber & Forestry,6,BYRN,0.6303
+Timber & Forestry,7,RYAM,0.6261
+Timber & Forestry,8,XBIT,0.6223
+Timber & Forestry,9,BWEN,0.5986
+Timber & Forestry,10,MFIN,0.5869
+Timber & Forestry,11,BOOM,0.5836
+Timber & Forestry,12,MTUS,0.5794
+Timber & Forestry,13,AHG,0.5596
+Timber & Forestry,14,FTK,0.5581
+Timber & Forestry,15,KRO,0.5565
+Timber & Forestry,16,MHNC,0.5508
+Timber & Forestry,17,ASIX,0.5457
+Timber & Forestry,18,CNDT,0.5272
+Timber & Forestry,19,ASA,0.5266
+Timber & Forestry,20,ACHV,0.5265
+Timber & Forestry,21,UNB,0.5182
+Timber & Forestry,22,MTRX,0.5171
+Timber & Forestry,23,TWIN,0.5167
+Timber & Forestry,24,HY,0.5162
+Timber & Forestry,25,LMB,0.514
+Timber & Forestry,26,DQ,0.4966
+Timber & Forestry,27,ALOY,0.4961
+Timber & Forestry,28,GRVY,0.4929
+Timber & Forestry,29,TROX,0.4864
+Timber & Forestry,30,ODV,0.4864

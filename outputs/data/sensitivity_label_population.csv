@@ -1,0 +1,12 @@
+theme,baseline (17: themes + all controls),baseline + 7 factor ETFs (24),baseline minus SECTOR: US Energy,baseline minus SECTOR: US Financials,baseline minus SECTOR: US Technology,baseline minus SUBSECTOR: US Banks,baseline minus SUBSECTOR: US Biotech,baseline minus SUBSECTOR: US Software,"themes only (11, no controls)"
+AI Infrastructure,0.165,0.103,0.166,0.168,0.199,0.166,0.168,0.168,0.217
+Agribusiness,0.121,0.073,0.121,0.125,0.148,0.122,0.138,0.123,0.193
+Clean Energy,0.089,0.084,0.089,0.11,0.09,0.096,0.089,0.094,0.133
+Critical Minerals,0.302,0.221,0.338,0.304,0.308,0.32,0.313,0.307,0.397
+Cybersecurity,0.335,0.308,0.337,0.335,0.351,0.373,0.338,0.383,0.47
+Defense,0.082,0.05,0.095,0.089,0.087,0.085,0.083,0.083,0.117
+Fintech,0.092,0.087,0.092,0.114,0.093,0.1,0.092,0.097,0.138
+Robotics & AI,0.107,0.067,0.108,0.109,0.13,0.108,0.11,0.109,0.141
+Timber & Forestry,0.103,0.063,0.119,0.112,0.109,0.107,0.104,0.104,0.147
+US Infrastructure,0.115,0.108,0.115,0.142,0.116,0.124,0.115,0.121,0.172
+Water,0.253,0.159,0.255,0.258,0.306,0.255,0.259,0.258,0.333
