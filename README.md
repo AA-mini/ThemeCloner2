@@ -1,4 +1,59 @@
-# ThemeCloner
+# ThemeCloner2 -- Walk-Forward RP-PCA (V2)
+
+**Forked from the submitted ThemeCloner V1 paper repo.** V1 is untouched, elsewhere,
+under `AA-mini/Thematic-Engine-Paper`. This repo is the follow-on scoped as
+"ThemeCloner 2.0": genuine walk-forward RP-PCA instead of a single full-sample fit.
+
+**Active notebook:** `ThemeCloner_V2_WalkForward.ipynb`. Start there.
+**Reference only, not run:** `ThemeCloner_V1_reference.ipynb` (the original V1
+notebook, kept for diffing behaviour, not part of the V2 workflow).
+**Legacy, not part of V2:** `main_v1_legacy.py` (old CLI runner referencing an
+even earlier numbered-script layout; superseded by the notebook well before V2).
+
+**Known clutter to clean up manually:** `ThemeCloner__.ipynb` (61 cells) and
+`notebooks/ThemeCloner.ipynb` (21 cells, dated July 3) both look like stale
+duplicates from earlier autosave/sync conflicts -- left untouched here since
+their exact provenance wasn't fully verified before handoff. Worth deleting
+once confirmed unneeded, to avoid the "which file is the real one" confusion
+that came up more than once with the V1 repo.
+
+## What changed vs. V1
+
+1. **`src/residualize.py`** gained a `keep_alpha: bool = False` parameter on
+   `residualize_returns()` / `residualize_universe()`. Default `False`
+   reproduces V1 exactly. `True` (used for the covariance universe only)
+   adds each stock's estimated regression intercept back onto its residual,
+   so the residual's cross-sectional mean reflects real alpha instead of
+   being forced to zero -- this is what gives RP-PCA's premium-reward penalty
+   (`gamma * mu @ mu.T` in `rppca.py`) actual information to exploit, since
+   V1 confirmed empirically that mean-zero residuals make RP-PCA collapse to
+   plain PCA (V1 paper, Section 3.3).
+2. **`src/rppca_walkforward.py`** (new) -- refits RP-PCA at each rebalance
+   date using only trailing data (expanding or rolling window), reusing
+   `rppca.fit_rppca()` unchanged underneath. Also provides
+   `factor_drift_report()`, a direct, computed answer to "how much does a
+   factor's identity actually rotate between rebalances" -- previously an
+   open question raised but not measured in the V1 conversation.
+3. **`src/projection.py`** gained two new functions alongside the original V1
+   ones: `score_universe_v2()` (correlation of each candidate's actual return
+   against the theme's synthetic factor-implied return, replacing cosine
+   similarity -- captures both direction and magnitude, unlike cosine
+   similarity which is direction-only) and `candidate_null_test()` (compares
+   real top-N candidates against randomly drawn stocks, to catch the "there's
+   nothing here" failure mode neither V1 nor V2 scoring detects on its own).
+4. **`src/backtest_v2.py`** (new) -- the walk-forward loop itself: point-in-time
+   fit -> point-in-time fingerprint -> point-in-time score -> hold one forward
+   period -> record realized return -> roll forward. This is a genuine
+   temporal out-of-sample test, closing the gap in V1's validation (which was
+   cross-sectional-only: target stocks held out, but the factor model and
+   scores were still computed on the full sample at once).
+
+**Everything else** (`data_pull.py`, `rppca.py`'s actual solver, `theme_dna.py`,
+`scoring.py`, `theme_diagnostics.py`, `momentum_test.py`) is reused unchanged.
+
+---
+
+# ThemeCloner (V1, original README below)
 
 **Find small-cap (or any-universe) analogs of large-cap thematic ETFs using RP-PCA.**
 

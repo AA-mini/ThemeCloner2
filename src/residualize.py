@@ -124,7 +124,8 @@ def get_ff_factors(start: str = "2017-01-01", end: str = None,
 
 def residualize_returns(returns: pd.DataFrame,
                           factors: pd.DataFrame,
-                          factor_cols: list = None) -> pd.DataFrame:
+                          factor_cols: list = None,
+                          keep_alpha: bool = False) -> pd.DataFrame:
     """
     For each stock, regresses its excess returns on the factor model
     and returns the residuals. The residuals are what RP-PCA then
@@ -136,11 +137,18 @@ def residualize_returns(returns: pd.DataFrame,
     factors      : T x K DataFrame from get_ff_factors()
     factor_cols  : which columns of factors to use as regressors. Default:
                    all except RF (we strip RF off the returns separately).
+    keep_alpha   : V2 ADDITION. See note below. Default False reproduces the
+                   exact V1 behaviour (residuals mean-zero by construction).
 
     Returns
     -------
-    residuals : T x N DataFrame, same shape as input returns
-                each column has mean approximately zero by construction
+    residuals : T x N DataFrame, same shape as input returns.
+                If keep_alpha=False (V1 default): each column has mean
+                approximately zero by construction -- this is an automatic
+                property of OLS with an intercept term, not a separate
+                demeaning step. If keep_alpha=True (V2): each column's mean
+                equals that stock's estimated regression intercept (its
+                factor-neutral alpha), NOT zero.
 
     Notes
     -----
@@ -148,6 +156,27 @@ def residualize_returns(returns: pd.DataFrame,
     residualization introduces look-ahead concerns and adds noise.
     Full-sample residuals are what the cross-sectional literature uses
     (e.g. Lettau-Pelger themselves residualize this way).
+
+    V2 NOTE -- why keep_alpha exists and why it is NOT "don't residualize":
+    V1's residuals are mean-zero in the estimation sample because the
+    regression includes an intercept and OLS residuals from an intercept
+    regression always sum to zero. That is precisely the information RP-PCA's
+    penalty term needs (see rppca.py: gamma * mu @ mu.T, where mu is the
+    cross-sectional mean return vector) -- with mu forced to ~0, the penalty
+    has nothing to reward, and RP-PCA collapses to ordinary PCA (confirmed
+    empirically in the V1 paper, Section 3.3).
+    keep_alpha=True does NOT skip residualization and does NOT reintroduce
+    raw market/style beta. Stocks are still fully orthogonalized against
+    Mkt-RF/SMB/HML/RMW/CMA/MOM -- the factor-neutral character V1 relies on
+    for the "not momentum in disguise" argument is fully preserved. The ONLY
+    change is that the estimated intercept (alpha) is added back on top of
+    the factor-neutral residual, so the residual's mean reflects that stock's
+    own average abnormal return instead of being forced to zero. This gives
+    RP-PCA's premium-reward term real cross-sectional variation in mu to
+    exploit, at the cost of reintroducing standard in-sample look-ahead in mu
+    itself -- which is why V2 also requires walk-forward re-estimation
+    (rppca_walkforward.py): mu must only ever be estimated on data prior to
+    the period being scored.
     """
 
     if factor_cols is None:
@@ -158,7 +187,8 @@ def residualize_returns(returns: pd.DataFrame,
     if len(common) < 52:
         raise ValueError(f"only {len(common)} common dates -- check alignment")
 
-    print(f"\nresidualizing {returns.shape[1]} stocks against {len(factor_cols)} factors")
+    print(f"\nresidualizing {returns.shape[1]} stocks against {len(factor_cols)} factors"
+          f"{' (keep_alpha=True, V2)' if keep_alpha else ''}")
     print(f"  factor cols: {factor_cols}")
     print(f"  common dates: {len(common)} weeks")
 
@@ -176,12 +206,21 @@ def residualize_returns(returns: pd.DataFrame,
     F_mat = np.column_stack([np.ones(len(F)), F.values])  # T x (K+1)
     R_mat = R.fillna(0).values                              # T x N
 
-    # betas = (F'F)^{-1} F'R   shape: (K+1) x N
+    # betas = (F'F)^{-1} F'R   shape: (K+1) x N   -- row 0 is the intercept (alpha)
     FtF_inv = np.linalg.inv(F_mat.T @ F_mat + 1e-10 * np.eye(F_mat.shape[1]))
     betas   = FtF_inv @ F_mat.T @ R_mat                    # (K+1) x N
+    alpha   = betas[0, :]                                   # N-vector, per-stock intercept
 
-    # residuals = R - F @ betas
+    # residuals = R - F @ betas   (V1 behaviour: this includes subtracting the
+    # intercept, which is exactly what forces the mean to zero)
     residuals = R_mat - F_mat @ betas                       # T x N
+
+    if keep_alpha:
+        # V2: add the intercept back so the residual's mean = alpha, not 0.
+        # Still orthogonal to every factor column (that part of betas is
+        # untouched) -- only the demeaning effect of the intercept term
+        # is reversed.
+        residuals = residuals + alpha[np.newaxis, :]
 
     resid_df = pd.DataFrame(residuals, index=R.index, columns=R.columns)
 
@@ -189,6 +228,9 @@ def residualize_returns(returns: pd.DataFrame,
     avg_r2 = _compute_avg_r2(R_mat, residuals)
     print(f"  average R² across stocks: {avg_r2:.3f}")
     print(f"  (high R² = factor model explains a lot, low residual variance left)")
+    if keep_alpha:
+        print(f"  mean |alpha| across stocks (annualised): {np.mean(np.abs(alpha)) * 52:.3f}")
+        print(f"  (this is the cross-sectional mean-return signal RP-PCA's penalty now sees)")
 
     return resid_df
 
@@ -206,9 +248,17 @@ def _compute_avg_r2(returns_mat: np.ndarray, residuals_mat: np.ndarray) -> float
 def residualize_universe(returns: pd.DataFrame,
                           start: str = None,
                           end: str = None,
-                          factor_cols: list = None) -> dict:
+                          factor_cols: list = None,
+                          keep_alpha: bool = False) -> dict:
     """
     Full pipeline: pull FF5+momentum, align to return panel, return residuals.
+
+    keep_alpha : V2 addition, passed straight through to residualize_returns().
+                 See that function's docstring for what this does and why.
+                 Note standardize_residuals() (below) only divides by std and
+                 never subtracts a mean, so a keep_alpha=True residual's
+                 preserved cross-sectional mean survives standardization
+                 intact (rescaled, not removed).
 
     Returns a dict with:
         residuals : T x N residualized return DataFrame  (feed this to RP-PCA)
@@ -221,7 +271,8 @@ def residualize_universe(returns: pd.DataFrame,
         end = str(returns.index[-1].date())
 
     factors  = get_ff_factors(start=start, end=end, freq="weekly")
-    resid_df = residualize_returns(returns, factors, factor_cols=factor_cols)
+    resid_df = residualize_returns(returns, factors, factor_cols=factor_cols,
+                                    keep_alpha=keep_alpha)
 
     common  = returns.index.intersection(factors.index)
     R_mat   = returns.loc[common].fillna(0).values

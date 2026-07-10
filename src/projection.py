@@ -224,6 +224,162 @@ def validate_against_etf(scores: pd.DataFrame,
     return validation
 
 
+# -------------------- V2 NEW: synthetic-factor-return scoring --------------------
+#
+# WHY THIS EXISTS:
+# score_universe() above (V1, unchanged) uses cosine similarity between a
+# stock's K-vector of factor loadings and the theme fingerprint. Cosine
+# similarity normalizes both vectors to unit length before comparing --
+# by construction it captures DIRECTION only. A stock whose factor exposure
+# is 90% idiosyncratic noise and 10% genuine theme signal can score identically
+# to a stock that is cleanly, mostly explained by the theme's factors, as long
+# as the *direction* of whatever signal exists happens to match. This was
+# diagnosed as a likely driver of negative realized basket alpha in V1
+# (mean candidate R² against the K-factor model was only ~0.06-0.08).
+#
+# THE FIX: instead of comparing loading VECTORS, build the theme's synthetic
+# factor-implied RETURN SERIES (the fingerprint-weighted combination of the
+# K factor return time series), then correlate each candidate's ACTUAL return
+# series against that synthetic series directly. This one number captures:
+#   - direction (sign of the correlation, same job cosine similarity did)
+#   - magnitude (a stock that is mostly idiosyncratic noise will show a LOW
+#     correlation to the synthetic series even if its residual loading
+#     direction matched, because the noise dilutes the correlation -- this
+#     is exactly the information cosine similarity discards)
+# This replaces cosine similarity; it does not need to be combined with a
+# separate R²-weighting step the way V1's post-hoc fix did, because magnitude
+# is now part of the score itself, not bolted on afterward.
+
+def synthetic_theme_returns(rppca_result: dict, theme_factors: dict) -> pd.DataFrame:
+    """
+    Builds each theme's synthetic factor-implied return series: the K factor
+    return time series, combined using the theme's fingerprint as weights.
+
+    synthetic_return_t = sum_k( fingerprint[k] * factor_return[k, t] )
+
+    Returns
+    -------
+    pd.DataFrame, T x n_themes, one synthetic return column per theme.
+    """
+    factors_df = rppca_result["factors"]   # T x K
+    out = {}
+    for theme, fp in theme_factors.items():
+        fp = np.asarray(fp)
+        out[theme] = factors_df.values @ fp
+    return pd.DataFrame(out, index=factors_df.index)
+
+
+def score_universe_v2(target_returns: pd.DataFrame,
+                       synthetic_returns: pd.DataFrame) -> pd.DataFrame:
+    """
+    V2 scoring: correlation of each target-universe stock's actual return
+    series with each theme's synthetic factor-implied return series.
+
+    This is the direct replacement for score_universe()'s cosine similarity.
+    Same output shape (stocks x themes) so every downstream V1 function that
+    consumes a "scores" DataFrame (rank_candidates, validate_against_etf)
+    works unchanged against V2 scores.
+
+    Returns
+    -------
+    scores : pd.DataFrame (target stocks x themes), values in [-1, 1]
+    """
+    common = target_returns.index.intersection(synthetic_returns.index)
+    if len(common) < 52:
+        raise ValueError(f"only {len(common)} common weeks -- check date alignment")
+
+    R = target_returns.loc[common]
+    S = synthetic_returns.loc[common]
+
+    scores = pd.DataFrame(index=R.columns, columns=S.columns, dtype=float)
+    for theme in S.columns:
+        s = S[theme].values
+        s_centered = s - s.mean()
+        s_norm = np.linalg.norm(s_centered)
+        if s_norm == 0:
+            scores[theme] = np.nan
+            continue
+        for stock in R.columns:
+            r = R[stock].fillna(0).values
+            r_centered = r - r.mean()
+            r_norm = np.linalg.norm(r_centered)
+            if r_norm == 0:
+                scores.loc[stock, theme] = 0.0
+                continue
+            scores.loc[stock, theme] = float(np.dot(r_centered, s_centered) / (r_norm * s_norm))
+
+    print(f"\nV2 scores (synthetic-factor-return correlation): "
+          f"{scores.shape[0]} stocks x {scores.shape[1]} themes")
+    print(f"  range: [{scores.min().min():.3f}, {scores.max().max():.3f}]")
+    return scores
+
+
+# -------------------- V2 NEW: candidate-level null / placebo test --------------------
+#
+# WHY THIS EXISTS:
+# Neither V1's rank_candidates() nor V2's score_universe_v2() has a "there is
+# nothing here" detector -- both will always return a top-N regardless of
+# whether the target universe contains any genuine thematic exposure at all.
+# This directly tests that: for each theme, compares the actual top-N
+# candidates' scores against a null distribution built from randomly drawn
+# stocks. If the real top-N isn't clearly above where random stocks land,
+# the "discovery" for that theme is not distinguishable from noise.
+
+def candidate_null_test(scores: pd.DataFrame,
+                         top_n: int = 30,
+                         n_null_draws: int = 500,
+                         random_state: int = 0) -> pd.DataFrame:
+    """
+    For each theme, compares the mean score of the actual top_n candidates
+    against the distribution of mean scores from n_null_draws random draws
+    of top_n stocks from the same universe.
+
+    Returns
+    -------
+    DataFrame: theme, actual_top_n_mean_score, null_p50, null_p95, null_p99,
+               percentile_of_actual (where the real top-N sits in the null
+               distribution -- >99 means the real discovery clearly beats
+               chance; well below that is a genuine warning sign, not proof
+               of failure, since a theme can be real but weak).
+    """
+    rng = np.random.default_rng(random_state)
+    n_stocks = scores.shape[0]
+    rows = []
+
+    for theme in scores.columns:
+        theme_scores = scores[theme].dropna()
+        if len(theme_scores) < top_n:
+            continue
+
+        actual_top = theme_scores.sort_values(ascending=False).head(top_n).mean()
+
+        null_means = []
+        vals = theme_scores.values
+        for _ in range(n_null_draws):
+            draw = rng.choice(vals, size=top_n, replace=False)
+            null_means.append(draw.mean())
+        null_means = np.array(null_means)
+
+        pct = float((null_means < actual_top).mean() * 100)
+
+        rows.append({
+            "theme": theme,
+            "actual_top_n_mean_score": round(float(actual_top), 4),
+            "null_p50": round(float(np.percentile(null_means, 50)), 4),
+            "null_p95": round(float(np.percentile(null_means, 95)), 4),
+            "null_p99": round(float(np.percentile(null_means, 99)), 4),
+            "percentile_of_actual": round(pct, 1),
+        })
+
+    result = pd.DataFrame(rows)
+    if not result.empty:
+        print(f"\ncandidate-level null test (top_{top_n} mean score vs. {n_null_draws} random draws):")
+        print(result.to_string(index=False))
+        print("  percentile_of_actual near 100 = clearly beats chance")
+        print("  percentile_of_actual well below 99 = cannot rule out noise for this theme")
+    return result
+
+
 # -------------------- 4. Save --------------------
 
 def save_projections(projections: pd.DataFrame, scores: pd.DataFrame,
