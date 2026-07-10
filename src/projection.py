@@ -271,49 +271,32 @@ def synthetic_theme_returns(rppca_result: dict, theme_factors: dict) -> pd.DataF
 
 def score_universe_v2(target_returns: pd.DataFrame,
                        synthetic_returns: pd.DataFrame) -> pd.DataFrame:
-    """
-    V2 scoring: correlation of each target-universe stock's actual return
-    series with each theme's synthetic factor-implied return series.
-
-    This is the direct replacement for score_universe()'s cosine similarity.
-    Same output shape (stocks x themes) so every downstream V1 function that
-    consumes a "scores" DataFrame (rank_candidates, validate_against_etf)
-    works unchanged against V2 scores.
-
-    Returns
-    -------
-    scores : pd.DataFrame (target stocks x themes), values in [-1, 1]
-    """
     common = target_returns.index.intersection(synthetic_returns.index)
     if len(common) < 52:
         raise ValueError(f"only {len(common)} common weeks -- check date alignment")
 
-    R = target_returns.loc[common]
-    S = synthetic_returns.loc[common]
+    R_mat = target_returns.loc[common].fillna(0).values      # T x N_stocks
+    S_mat = synthetic_returns.loc[common].values              # T x N_themes
 
-    scores = pd.DataFrame(index=R.columns, columns=S.columns, dtype=float)
-    for theme in S.columns:
-        s = S[theme].values
-        s_centered = s - s.mean()
-        s_norm = np.linalg.norm(s_centered)
-        if s_norm == 0:
-            scores[theme] = np.nan
-            continue
-        for stock in R.columns:
-            r = R[stock].fillna(0).values
-            r_centered = r - r.mean()
-            r_norm = np.linalg.norm(r_centered)
-            if r_norm == 0:
-                scores.loc[stock, theme] = 0.0
-                continue
-            scores.loc[stock, theme] = float(np.dot(r_centered, s_centered) / (r_norm * s_norm))
+    # center both, once, vectorized
+    R_c = R_mat - R_mat.mean(axis=0, keepdims=True)
+    S_c = S_mat - S_mat.mean(axis=0, keepdims=True)
+
+    R_norm = np.linalg.norm(R_c, axis=0)
+    S_norm = np.linalg.norm(S_c, axis=0)
+    R_norm[R_norm == 0] = 1e-10
+    S_norm[S_norm == 0] = 1e-10
+
+    # N_stocks x N_themes correlation matrix in one matrix multiply
+    scores_mat = (R_c.T @ S_c) / np.outer(R_norm, S_norm)
+
+    scores = pd.DataFrame(scores_mat, index=target_returns.columns,
+                           columns=synthetic_returns.columns)
 
     print(f"\nV2 scores (synthetic-factor-return correlation): "
           f"{scores.shape[0]} stocks x {scores.shape[1]} themes")
     print(f"  range: [{scores.min().min():.3f}, {scores.max().max():.3f}]")
     return scores
-
-
 # -------------------- V2 NEW: candidate-level null / placebo test --------------------
 #
 # WHY THIS EXISTS:
