@@ -113,6 +113,143 @@ def score_universe(projections: pd.DataFrame,
     return scores
 
 
+# -------------------- V2 NEW: candidate-level R² against the factor model --------------------
+#
+# WHY THIS EXISTS:
+# Cosine similarity (score_universe, above) and the V2 synthetic-return
+# correlation (score_universe_v2, below) both measure how well a stock's
+# DIRECTION matches the theme -- neither says how much of the stock's OWN
+# variance the K-factor model actually explains. A stock can score well on
+# either metric while being mostly idiosyncratic noise. This computes that
+# missing number directly, so it can be used as an explicit admission floor
+# (min_r2 in scoring.screen_and_rank_candidates) rather than just hoping a
+# score threshold catches noisy names incidentally.
+
+def compute_candidate_r2(target_returns: pd.DataFrame, rppca_result: dict) -> pd.Series:
+    """
+    For every stock in the target universe, regresses its own return series
+    on the K factors and reports the R² -- how much of ITS OWN variance the
+    factor model explains. High R² = a clean, well-explained match, low
+    weight of idiosyncratic noise. Low R² = mostly noise, regardless of how
+    well-DIRECTED that noise happens to be.
+
+    Returns
+    -------
+    pd.Series indexed by ticker, values in [0, 1] (can be negative in
+    pathological cases with the +1e-8 ridge term; treat negative as ~0).
+    """
+    factors_df = rppca_result["factors"]
+    common = target_returns.index.intersection(factors_df.index)
+    F = factors_df.loc[common].values
+    K = F.shape[1]
+    F_design = np.column_stack([np.ones(len(F)), F])
+    FtF_inv = np.linalg.inv(F_design.T @ F_design + 1e-8 * np.eye(K + 1))
+
+    R = target_returns.loc[common].fillna(0).values   # T x N
+    betas = FtF_inv @ F_design.T @ R                   # (K+1) x N
+    R_hat = F_design @ betas
+    ss_res = ((R - R_hat) ** 2).sum(axis=0)
+    ss_tot = ((R - R.mean(axis=0, keepdims=True)) ** 2).sum(axis=0)
+    r2 = 1 - ss_res / np.where(ss_tot > 0, ss_tot, 1e-10)
+
+    return pd.Series(r2, index=target_returns.columns, name="candidate_r2")
+
+
+# -------------------- V2 NEW: weighted basket return helper --------------------
+#
+# Shared by validate_against_etf (below) and scoring.screen_and_rank_candidates.
+# weights=None reproduces V1's equal-weighting exactly.
+
+def basket_return(returns: pd.DataFrame, tickers: list, weights: pd.Series = None) -> pd.Series:
+    """
+    Computes a (weighted or equal-weighted) portfolio return series from a
+    list of tickers.
+
+    weights : optional pd.Series indexed by ticker. Will be renormalized to
+              sum to 1 over the tickers actually used. None = equal-weight
+              (V1 behaviour).
+    """
+    avail = [t for t in tickers if t in returns.columns]
+    if not avail:
+        return pd.Series(dtype=float)
+
+    if weights is None:
+        return returns[avail].mean(axis=1)
+
+    w = weights.reindex(avail).fillna(0)
+    if w.sum() <= 0:
+        return returns[avail].mean(axis=1)   # fallback to equal-weight
+    w = w / w.sum()
+    return (returns[avail] * w).sum(axis=1)
+
+
+# -------------------- V2 NEW: tracking plot including individual ETFs --------------------
+#
+# WHY THIS EXISTS: the V1 validation plots only ever showed the basket vs.
+# the BLENDED average of a theme's ETFs. If one of 2-3 ETFs behaves
+# differently from the others (a real risk -- purity scores in this codebase
+# are sometimes well below 1.0), that's invisible in a blended-average chart,
+# and a basket that actually tracks well against one constituent ETF can look
+# like it's "underperforming the theme" when it's really just diverging from
+# a single outlier ETF dragging the blend around.
+
+def plot_tracking_vs_etfs(basket_ret: pd.Series,
+                           etf_returns: pd.DataFrame,
+                           theme_etfs: list,
+                           theme_name: str,
+                           ax=None):
+    """
+    Plots, all indexed to 1.0 at the same start date:
+      - the candidate basket (bold, primary line)
+      - the blended (equal-weight average) ETF return (bold, dashed)
+      - each individual constituent ETF (thin, dotted)
+
+    Parameters
+    ----------
+    basket_ret   : pd.Series, the candidate basket's return series
+    etf_returns  : full ETF return DataFrame (any residualization state --
+                   typically pass RAW/actual returns here for an
+                   interpretable price-level chart, not residuals)
+    theme_etfs   : list of ETF tickers belonging to this theme
+    theme_name   : for the plot title
+    ax           : optional matplotlib Axes to draw on (creates one if None)
+    """
+    import matplotlib.pyplot as plt
+
+    avail = [e for e in theme_etfs if e in etf_returns.columns]
+    if not avail:
+        print(f"  WARNING: no ETFs available for '{theme_name}' -- skipping plot")
+        return None
+
+    common = basket_ret.index
+    for e in avail:
+        common = common.intersection(etf_returns[e].dropna().index)
+    if len(common) < 12:
+        print(f"  WARNING: fewer than 12 common weeks for '{theme_name}' -- skipping plot")
+        return None
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+    basket_curve = (1 + basket_ret.loc[common]).cumprod()
+    ax.plot(basket_curve, label="candidate basket", linewidth=2.2, color="steelblue")
+
+    blended = etf_returns.loc[common, avail].mean(axis=1)
+    blended_curve = (1 + blended).cumprod()
+    ax.plot(blended_curve, label="blended ETF avg", linewidth=2.0,
+             linestyle="--", color="firebrick")
+
+    colors = plt.cm.Oranges(np.linspace(0.4, 0.85, len(avail)))
+    for e, c in zip(avail, colors):
+        etf_curve = (1 + etf_returns.loc[common, e]).cumprod()
+        ax.plot(etf_curve, label=e, linewidth=1.0, linestyle=":", color=c, alpha=0.85)
+
+    ax.set_title(f"{theme_name}: basket vs. blended ETF vs. individual constituent ETFs")
+    ax.set_ylabel("growth of $1")
+    ax.legend(fontsize=8)
+    return ax
+
+
 # -------------------- 3. OOS validation: do picks co-move with ETF? --------------------
 
 def validate_against_etf(scores: pd.DataFrame,
@@ -120,10 +257,13 @@ def validate_against_etf(scores: pd.DataFrame,
                            etf_returns: pd.DataFrame,
                            etf_config: pd.DataFrame,
                            top_n: int = 30,
-                           min_score: float = 0.4) -> pd.DataFrame:
+                           min_score: float = 0.4,
+                           ranked: pd.DataFrame = None,
+                           candidate_weights: dict = None) -> pd.DataFrame:
     """
-    Validates candidate stocks by checking whether their equal-weighted
-    return correlates with the theme ETF going forward.
+    Validates candidate stocks by checking whether their (equal-weighted, or
+    optionally weighted -- see candidate_weights below) return correlates
+    with the theme ETF going forward.
 
     This is the clean OOS test that doesn't require constituent holdings:
     we built our candidates using return co-movement structure (RP-PCA),
@@ -131,9 +271,24 @@ def validate_against_etf(scores: pd.DataFrame,
 
     For each theme:
       - Take top_n scoring stocks as candidates
-      - Compute equal-weighted candidate portfolio return
+      - Compute the candidate portfolio return (equal-weighted, or per
+        candidate_weights if provided)
       - Correlate with the theme's ETF returns
       - High correlation = candidates genuinely track the theme
+
+    Parameters
+    ----------
+    ranked            : V2 addition. Pass a pre-computed ranked-candidates
+                         DataFrame (e.g. from scoring.screen_and_rank_candidates,
+                         which supports a variable basket size and an R² floor)
+                         instead of recomputing a plain top_n/min_score rank
+                         here. If None, falls back to V1 behaviour
+                         (scoring.rank_candidates with top_n/min_score).
+    candidate_weights : V2 addition. Optional {theme -> pd.Series(ticker -> weight)}
+                        dict. If provided for a theme, the basket is built with
+                        those weights (renormalized) instead of equal-weighting.
+                        None (default) reproduces V1's equal-weighted basket
+                        exactly.
 
     PAPER NOTE: this is the primary validation metric. A high R² between
     the candidate portfolio and the ETF (without the candidates being in
@@ -142,10 +297,9 @@ def validate_against_etf(scores: pd.DataFrame,
     Returns a summary DataFrame with correlation per theme.
     """
 
-    from src.scoring import rank_candidates
-
-    # get candidates per theme
-    ranked = rank_candidates(scores, top_n=top_n, min_score=min_score)
+    if ranked is None:
+        from src.scoring import rank_candidates
+        ranked = rank_candidates(scores, top_n=top_n, min_score=min_score)
 
     results = []
     for theme in scores.columns:
@@ -153,11 +307,14 @@ def validate_against_etf(scores: pd.DataFrame,
         if not theme_candidates:
             continue
 
-        # equal-weighted candidate portfolio
         cand_avail = [t for t in theme_candidates if t in target_returns.columns]
         if not cand_avail:
             continue
-        portfolio_ret = target_returns[cand_avail].mean(axis=1)
+
+        weights = None
+        if candidate_weights is not None and theme in candidate_weights:
+            weights = candidate_weights[theme]
+        portfolio_ret = basket_return(target_returns, cand_avail, weights=weights)
 
         # ETFs for this theme
         theme_etfs = etf_config[etf_config["theme"] == theme]["ticker"].tolist()

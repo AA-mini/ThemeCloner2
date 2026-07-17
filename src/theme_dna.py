@@ -67,7 +67,8 @@ def fit_covariance_universe(cov_returns: pd.DataFrame,
 def label_theme_factors(rppca_result: dict,
                           etf_returns: pd.DataFrame,
                           etf_config: pd.DataFrame,
-                          top_factors: int = 3) -> dict:
+                          top_factors: int = 3,
+                          min_etf_r2: float = 0.0) -> dict:
     """
     Identifies which RP-PCA factors correspond to which themes by regressing
     each ETF's return series on the extracted factor time series.
@@ -88,6 +89,15 @@ def label_theme_factors(rppca_result: dict,
     top_factors   : how many factors per ETF to consider when building
                     the theme fingerprint (default 3 -- avoids noise from
                     factors with near-zero coefficients)
+    min_etf_r2    : V2 ADDITION. ETFs whose own R² against the K-factor
+                    model falls below this threshold are excluded from the
+                    fingerprint centroid entirely -- a weak, noisy ETF fit
+                    (one the factor model barely explains) should not get
+                    equal say in defining the theme alongside a clean one.
+                    Default 0.0 reproduces V1 behaviour (no ETF screening).
+                    A theme left with zero surviving ETFs after this filter
+                    is skipped with a warning, same as the existing
+                    no-ETFs-available case.
 
     Returns
     -------
@@ -96,6 +106,8 @@ def label_theme_factors(rppca_result: dict,
         etf_r2        : {etf_ticker -> float} -- R² of each ETF on all factors
         etf_weights   : {etf_ticker -> K-vector} -- regression weights per ETF
         purity        : {theme -> float} -- cosine similarity across ETFs in theme
+        etfs_dropped  : {theme -> [tickers]} -- ETFs excluded by min_etf_r2, for
+                        transparency (V2 addition)
     """
 
     factors_df = rppca_result["factors"]   # T x K factor time series
@@ -142,6 +154,7 @@ def label_theme_factors(rppca_result: dict,
 
     theme_factors = {}
     purity        = {}
+    etfs_dropped  = {}
     themes        = etf_config["theme"].unique()
 
     print(f"\nbuilding theme fingerprints:")
@@ -152,6 +165,18 @@ def label_theme_factors(rppca_result: dict,
         if not available:
             print(f"  WARNING: '{theme}' has no ETFs with factor weights -- skipping")
             continue
+
+        # V2: screen out weak-fitting ETFs before they enter the fingerprint
+        weak = [e for e in available if etf_r2[e] < min_etf_r2]
+        strong = [e for e in available if etf_r2[e] >= min_etf_r2]
+        etfs_dropped[theme] = weak
+        if weak:
+            print(f"  {theme}: dropping {len(weak)} weak ETF(s) below min_etf_r2="
+                  f"{min_etf_r2:.2f}: {[(e, round(etf_r2[e],3)) for e in weak]}")
+        if not strong:
+            print(f"  WARNING: '{theme}' has no ETFs surviving min_etf_r2={min_etf_r2:.2f} -- skipping")
+            continue
+        available = strong
 
         # sparse weight vectors: keep only top_factors non-zero entries
         sparse_weights = []
@@ -184,6 +209,7 @@ def label_theme_factors(rppca_result: dict,
         "etf_r2":        etf_r2,
         "etf_weights":   etf_weights,
         "purity":        purity,
+        "etfs_dropped":  etfs_dropped,
     }
 
 
