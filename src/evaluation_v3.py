@@ -55,9 +55,16 @@ def build_forward_theme_benchmarks(
         if not set(factor_cols).issubset(forward_factors.columns):
             continue
 
-        medoid_beta = np.asarray(reference["medoid_beta"], dtype=float)
+        # Build the forward synthetic benchmark from all surviving theme ETFs.
+        # Matching still compares candidates with each ETF separately. The mean
+        # here is an explicit equal weight consensus benchmark for evaluation.
+        reference_betas = np.asarray(reference["betas"], dtype=float)
+        synthetic_components = (
+            forward_factors.loc[:, factor_cols].to_numpy(dtype=float)
+            @ reference_betas.T
+        )
         synthetic = pd.Series(
-            forward_factors.loc[:, factor_cols].to_numpy(dtype=float) @ medoid_beta,
+            np.mean(synthetic_components, axis=1),
             index=forward_factors.index,
             name=f"{theme}_synthetic",
         )
@@ -107,6 +114,60 @@ def _top_bottom_spread(scores: pd.Series, exposure: pd.Series, quantiles: int = 
     return float(bucket_means.iloc[-1] - bucket_means.iloc[0])
 
 
+def _panel_beta_and_correlation(
+    returns: pd.DataFrame,
+    benchmark: pd.Series,
+    min_obs: int = 8,
+) -> pd.DataFrame:
+    """Vectorized beta and correlation for many assets against one benchmark."""
+
+    columns = returns.columns.tolist()
+    output = pd.DataFrame(
+        index=columns,
+        columns=["beta", "correlation", "nobs"],
+        dtype=float,
+    )
+    common = returns.index.intersection(benchmark.index)
+    if len(common) == 0 or not columns:
+        return output
+
+    x = benchmark.reindex(common).to_numpy(dtype=float)
+    y = returns.reindex(common).to_numpy(dtype=float)
+    valid = np.isfinite(y) & np.isfinite(x)[:, None]
+    n = valid.sum(axis=0)
+    x0 = np.where(valid, x[:, None], 0.0)
+    y0 = np.where(valid, y, 0.0)
+    x_mean = np.divide(
+        x0.sum(axis=0),
+        n,
+        out=np.full(len(columns), np.nan),
+        where=n > 0,
+    )
+    y_mean = np.divide(
+        y0.sum(axis=0),
+        n,
+        out=np.full(len(columns), np.nan),
+        where=n > 0,
+    )
+    x_centered = np.where(valid, x[:, None] - x_mean[None, :], 0.0)
+    y_centered = np.where(valid, y - y_mean[None, :], 0.0)
+    covariance = np.sum(x_centered * y_centered, axis=0)
+    x_var = np.sum(x_centered * x_centered, axis=0)
+    y_var = np.sum(y_centered * y_centered, axis=0)
+
+    usable = (n >= min_obs) & (x_var > _EPS) & (y_var > _EPS)
+    beta = np.full(len(columns), np.nan)
+    correlation = np.full(len(columns), np.nan)
+    beta[usable] = covariance[usable] / x_var[usable]
+    correlation[usable] = covariance[usable] / np.sqrt(
+        x_var[usable] * y_var[usable]
+    )
+    output["beta"] = beta
+    output["correlation"] = correlation
+    output["nobs"] = n
+    return output
+
+
 def evaluate_forward_period(
     scores: pd.DataFrame,
     baskets: Mapping[str, dict],
@@ -116,77 +177,114 @@ def evaluate_forward_period(
     rebalance_date: pd.Timestamp,
     min_forward_obs: int = 8,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Evaluate all requested forward exposure metrics for one period."""
+    """Evaluate forward exposure metrics for one holding period."""
 
     summary_rows = []
-    detail_rows = []
+    detail_frames = []
 
     for theme, benchmark_set in benchmarks.items():
         theme_scores = scores.loc[scores["theme"] == theme].copy()
+        if "base_eligible" in theme_scores.columns:
+            theme_scores = theme_scores.loc[theme_scores["base_eligible"]]
         if theme_scores.empty:
             continue
 
+        tickers = [
+            ticker
+            for ticker in theme_scores["ticker"]
+            if ticker in forward_target_residuals.columns
+        ]
+        if not tickers:
+            continue
+        theme_scores = theme_scores.set_index("ticker").loc[tickers]
+
         synthetic = benchmark_set["synthetic"]
         etf_blend = benchmark_set["etf_blend"]
-
-        for row in theme_scores.itertuples(index=False):
-            ticker = row.ticker
-            if ticker not in forward_target_residuals.columns:
-                continue
-            stock = forward_target_residuals[ticker]
-            syn_beta, syn_corr, syn_nobs = _beta_and_correlation(
-                stock, synthetic, min_obs=min_forward_obs
-            )
-            etf_beta, etf_corr, etf_nobs = _beta_and_correlation(
-                stock, etf_blend, min_obs=min_forward_obs
-            )
-            detail_rows.append(
-                {
-                    "rebalance_date": pd.Timestamp(rebalance_date),
-                    "theme": theme,
-                    "ticker": ticker,
-                    "rank_score": row.rank_score,
-                    "penalized_distance": row.penalized_distance,
-                    "eligible": row.eligible,
-                    "selected": ticker in baskets.get(theme, {}).get("tickers", []),
-                    "forward_synthetic_beta": syn_beta,
-                    "forward_synthetic_corr": syn_corr,
-                    "forward_etf_beta": etf_beta,
-                    "forward_etf_corr": etf_corr,
-                    "forward_obs": max(syn_nobs, etf_nobs),
-                }
-            )
-
-        theme_detail = pd.DataFrame(
-            [row for row in detail_rows if row["theme"] == theme and row["rebalance_date"] == pd.Timestamp(rebalance_date)]
+        syn_metrics = _panel_beta_and_correlation(
+            forward_target_residuals.loc[:, tickers],
+            synthetic,
+            min_obs=min_forward_obs,
         )
-        selected_tickers = baskets.get(theme, {}).get("tickers", [])
-        selected_detail = theme_detail.loc[theme_detail["selected"]] if not theme_detail.empty else pd.DataFrame()
+        etf_metrics = _panel_beta_and_correlation(
+            forward_target_residuals.loc[:, tickers],
+            etf_blend,
+            min_obs=min_forward_obs,
+        )
 
-        residual_basket = _equal_weight_series(forward_target_residuals, selected_tickers)
-        raw_basket = _equal_weight_series(forward_target_raw, selected_tickers)
+        selected_tickers = baskets.get(theme, {}).get("tickers", [])
+        detail = pd.DataFrame(
+            {
+                "rebalance_date": pd.Timestamp(rebalance_date),
+                "theme": theme,
+                "ticker": tickers,
+                "rank_score": theme_scores["rank_score"].to_numpy(dtype=float),
+                "penalized_distance": theme_scores["penalized_distance"].to_numpy(dtype=float),
+                "eligible": theme_scores["eligible"].to_numpy(dtype=bool),
+                "selected": [ticker in selected_tickers for ticker in tickers],
+                "forward_synthetic_beta": syn_metrics.loc[tickers, "beta"].to_numpy(dtype=float),
+                "forward_synthetic_corr": syn_metrics.loc[tickers, "correlation"].to_numpy(dtype=float),
+                "forward_etf_beta": etf_metrics.loc[tickers, "beta"].to_numpy(dtype=float),
+                "forward_etf_corr": etf_metrics.loc[tickers, "correlation"].to_numpy(dtype=float),
+                "forward_obs": np.maximum(
+                    syn_metrics.loc[tickers, "nobs"].to_numpy(dtype=float),
+                    etf_metrics.loc[tickers, "nobs"].to_numpy(dtype=float),
+                ),
+            }
+        )
+        for optional_column in [
+            "candidate_r2",
+            "candidate_adjusted_r2",
+            "consensus_cosine",
+            "placebo_rank_pvalue",
+            "theme_distance_rank",
+            "n_eligible_themes",
+        ]:
+            if optional_column in theme_scores.columns:
+                detail[optional_column] = theme_scores[optional_column].to_numpy()
+        detail_frames.append(detail)
+
+        selected_detail = detail.loc[detail["selected"]]
+        residual_basket = _equal_weight_series(
+            forward_target_residuals,
+            selected_tickers,
+        )
+        raw_basket = _equal_weight_series(
+            forward_target_raw,
+            selected_tickers,
+        )
         basket_syn_beta, basket_syn_corr, _ = _beta_and_correlation(
-            residual_basket, synthetic, min_obs=min_forward_obs
+            residual_basket,
+            synthetic,
+            min_obs=min_forward_obs,
         )
         basket_etf_beta, basket_etf_corr, _ = _beta_and_correlation(
-            residual_basket, etf_blend, min_obs=min_forward_obs
+            residual_basket,
+            etf_blend,
+            min_obs=min_forward_obs,
         )
         raw_period_return = (
-            float((1.0 + raw_basket.dropna()).prod() - 1.0) if raw_basket.notna().any() else np.nan
+            float((1.0 + raw_basket.dropna()).prod() - 1.0)
+            if raw_basket.notna().any()
+            else np.nan
         )
 
-        if theme_detail.empty:
-            rank_ic_beta = rank_ic_corr = spread_beta = spread_corr = np.nan
-        else:
-            indexed = theme_detail.set_index("ticker")
-            rank_ic_beta = _rank_ic(indexed["rank_score"], indexed["forward_synthetic_beta"])
-            rank_ic_corr = _rank_ic(indexed["rank_score"], indexed["forward_synthetic_corr"])
-            spread_beta = _top_bottom_spread(
-                indexed["rank_score"], indexed["forward_synthetic_beta"]
-            )
-            spread_corr = _top_bottom_spread(
-                indexed["rank_score"], indexed["forward_synthetic_corr"]
-            )
+        indexed = detail.set_index("ticker")
+        rank_ic_beta = _rank_ic(
+            indexed["rank_score"],
+            indexed["forward_synthetic_beta"],
+        )
+        rank_ic_corr = _rank_ic(
+            indexed["rank_score"],
+            indexed["forward_synthetic_corr"],
+        )
+        spread_beta = _top_bottom_spread(
+            indexed["rank_score"],
+            indexed["forward_synthetic_beta"],
+        )
+        spread_corr = _top_bottom_spread(
+            indexed["rank_score"],
+            indexed["forward_synthetic_corr"],
+        )
 
         selected_mean_beta = (
             float(selected_detail["forward_synthetic_beta"].mean())
@@ -209,6 +307,7 @@ def evaluate_forward_period(
                 "rebalance_date": pd.Timestamp(rebalance_date),
                 "theme": theme,
                 "n_selected": len(selected_tickers),
+                "n_base_eligible": len(detail),
                 "forward_rank_ic_beta": rank_ic_beta,
                 "forward_rank_ic_corr": rank_ic_corr,
                 "top_bottom_beta_spread": spread_beta,
@@ -225,8 +324,12 @@ def evaluate_forward_period(
             }
         )
 
-    return pd.DataFrame(summary_rows), pd.DataFrame(detail_rows)
-
+    details = (
+        pd.concat(detail_frames, ignore_index=True)
+        if detail_frames
+        else pd.DataFrame()
+    )
+    return pd.DataFrame(summary_rows), details
 
 def basket_correlation_metric(
     tickers: Sequence[str],
@@ -295,7 +398,16 @@ def make_semantic_review_sample(
 
     for theme, group in scores.groupby("theme", sort=False):
         ranked = group.sort_values("penalized_distance")
-        candidates = ranked.loc[ranked["eligible"]].head(top_k)
+        
+        eligibility_col = (
+            "base_eligible"
+            if "base_eligible" in ranked.columns
+            else "eligible"
+        )
+
+        candidates = ranked.loc[
+            ranked[eligibility_col].fillna(False)
+        ].head(top_k)
         candidate_set = set(candidates["ticker"])
         pool = ranked.loc[~ranked["ticker"].isin(candidate_set)].copy()
 
@@ -368,7 +480,13 @@ def make_semantic_review_sample(
     review_columns += [
         column for column in ["company_name", "sector", "market_cap"] if column in key.columns
     ]
-    review = key.loc[:, review_columns].sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+    
+    review = (
+        key.reindex(columns=review_columns)
+        .sample(frac=1.0, random_state=random_state)
+        .reset_index(drop=True)
+    )
+    
     review["relevance_score"] = np.nan
     review["reviewer_notes"] = ""
     return {"review_sheet": review, "review_key": key}
@@ -379,36 +497,71 @@ def evaluate_semantic_review(
     review_key: pd.DataFrame,
     positive_threshold: float = 2.0,
 ) -> pd.DataFrame:
-    """Calculate precision and enrichment from completed blinded reviews."""
+    """Calculate precision and enrichment using only completed reviews."""
 
-    merged = completed_review.merge(review_key, on=["review_id", "theme", "ticker"], how="inner")
-    merged["is_relevant"] = merged["relevance_score"] >= positive_threshold
+    merged = completed_review.merge(
+        review_key, on=["review_id", "theme", "ticker"], how="inner"
+    )
+    merged["relevance_score"] = pd.to_numeric(
+        merged["relevance_score"], errors="coerce"
+    )
+
+    invalid = (
+        merged["relevance_score"].notna()
+        & ~merged["relevance_score"].between(0, 3)
+    )
+    if invalid.any():
+        raise ValueError("relevance_score must be between 0 and 3.")
+
+    merged["reviewed"] = merged["relevance_score"].notna()
+    merged["is_relevant"] = np.where(
+        merged["reviewed"],
+        merged["relevance_score"] >= positive_threshold,
+        np.nan,
+    )
 
     rows = []
     for theme, group in merged.groupby("theme", sort=False):
-        candidate = group.loc[group["model_group"] == "candidate"]
-        control = group.loc[group["model_group"] == "control"]
-        candidate_precision = float(candidate["is_relevant"].mean()) if len(candidate) else np.nan
-        control_precision = float(control["is_relevant"].mean()) if len(control) else np.nan
+        candidate_all = group.loc[group["model_group"] == "candidate"]
+        control_all = group.loc[group["model_group"] == "control"]
+        candidate = candidate_all.loc[candidate_all["reviewed"]]
+        control = control_all.loc[control_all["reviewed"]]
+
+        candidate_precision = (
+            float(candidate["is_relevant"].mean()) if len(candidate) else np.nan
+        )
+        control_precision = (
+            float(control["is_relevant"].mean()) if len(control) else np.nan
+        )
         enrichment = (
             candidate_precision / control_precision
-            if np.isfinite(candidate_precision) and control_precision > 0
+            if np.isfinite(candidate_precision)
+            and np.isfinite(control_precision)
+            and control_precision > 0
             else np.nan
         )
+
         rows.append(
             {
                 "theme": theme,
                 "candidate_precision": candidate_precision,
                 "control_precision": control_precision,
                 "enrichment": enrichment,
-                "candidate_mean_relevance": float(candidate["relevance_score"].mean())
-                if len(candidate)
-                else np.nan,
-                "control_mean_relevance": float(control["relevance_score"].mean())
-                if len(control)
-                else np.nan,
+                "candidate_mean_relevance": (
+                    float(candidate["relevance_score"].mean())
+                    if len(candidate)
+                    else np.nan
+                ),
+                "control_mean_relevance": (
+                    float(control["relevance_score"].mean())
+                    if len(control)
+                    else np.nan
+                ),
                 "n_candidates_reviewed": len(candidate),
                 "n_controls_reviewed": len(control),
+                "n_candidates_total": len(candidate_all),
+                "n_controls_total": len(control_all),
             }
         )
     return pd.DataFrame(rows)
+
