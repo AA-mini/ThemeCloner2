@@ -46,8 +46,18 @@ def build_forward_theme_benchmarks(
     forward_factors: pd.DataFrame,
     forward_etf_residuals: pd.DataFrame,
     theme_references: Mapping[str, dict],
+    forward_etf_raw: Optional[pd.DataFrame] = None,
 ) -> Dict[str, dict]:
-    """Build factor synthetic and residual ETF benchmarks for each theme."""
+    """Build factor synthetic and residual ETF benchmarks for each theme.
+
+    forward_etf_raw : V3 chart-3 addition. If provided, a RAW (non-residualized)
+        equal-weight ETF blend return series is also attached to each theme's
+        benchmark dict under key "etf_blend_raw". The existing "etf_blend" stays
+        residualized (correct for correlation/beta tracking metrics); the raw
+        blend is only for cumulative-RETURN charts, where a residualized blend
+        would be meaningless (residuals are ~mean-zero). Omitting it preserves
+        the exact prior behaviour.
+    """
 
     benchmarks: Dict[str, dict] = {}
     for theme, reference in theme_references.items():
@@ -78,9 +88,22 @@ def build_forward_theme_benchmarks(
             else pd.Series(dtype=float, name=f"{theme}_etf_blend")
         )
 
+        # V3 chart-3: raw (non-residualized) equal-weight blend, for cumulative
+        # return curves only.
+        etf_blend_raw = pd.Series(dtype=float, name=f"{theme}_etf_blend_raw")
+        if forward_etf_raw is not None:
+            raw_available = [
+                ticker for ticker in reference["tickers"] if ticker in forward_etf_raw.columns
+            ]
+            if raw_available:
+                etf_blend_raw = (
+                    forward_etf_raw.loc[:, raw_available].mean(axis=1).rename(f"{theme}_etf_blend_raw")
+                )
+
         benchmarks[str(theme)] = {
             "synthetic": synthetic,
             "etf_blend": etf_blend,
+            "etf_blend_raw": etf_blend_raw,
             "etfs": available_etfs,
         }
     return benchmarks
@@ -267,6 +290,13 @@ def evaluate_forward_period(
             if raw_basket.notna().any()
             else np.nan
         )
+        # V3 chart-3 plumbing: raw ETF-blend period return, mirroring the basket
+        # period return above, from the raw blend attached at benchmark-build time.
+        raw_etf_blend = benchmark_set.get("etf_blend_raw")
+        if raw_etf_blend is not None and len(raw_etf_blend) and raw_etf_blend.notna().any():
+            raw_etf_blend_return = float((1.0 + raw_etf_blend.dropna()).prod() - 1.0)
+        else:
+            raw_etf_blend_return = np.nan
 
         indexed = detail.set_index("ticker")
         rank_ic_beta = _rank_ic(
@@ -320,6 +350,7 @@ def evaluate_forward_period(
                 "basket_residual_etf_beta": basket_etf_beta,
                 "basket_residual_etf_corr": basket_etf_corr,
                 "raw_basket_period_return": raw_period_return,
+                "raw_etf_blend_period_return": raw_etf_blend_return,
                 "n_benchmark_etfs": len(benchmark_set.get("etfs", [])),
             }
         )

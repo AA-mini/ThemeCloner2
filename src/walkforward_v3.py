@@ -646,6 +646,7 @@ def run_point_in_time_backtest(
             forward_factors,
             etf_forward_residuals,
             references,
+            forward_etf_raw=etf_returns_raw.loc[forward_mask_etf],
         )
         evaluation, details = evaluate_forward_period(
             scores,
