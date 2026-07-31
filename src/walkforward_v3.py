@@ -272,6 +272,7 @@ def _run_single_placebo(
         min_etf_adjusted_r2=matching_config.min_etf_adjusted_r2,
         min_obs=min_train_obs,
         n_jobs=1,
+        min_etf_agreement=matching_config.min_etf_agreement,
     )
     return score_candidates(
         candidate_betas,
@@ -514,6 +515,7 @@ def run_point_in_time_backtest(
             min_etf_adjusted_r2=matching_config.min_etf_adjusted_r2,
             min_obs=min_train_obs,
             n_jobs=n_jobs,
+            min_etf_agreement=matching_config.min_etf_agreement,
         )
         if not references:
             continue

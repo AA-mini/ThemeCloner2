@@ -44,6 +44,39 @@ class MatchingConfig:
     min_cosine: float = 0.30
     cosine_quantile: float = 0.25
 
+    # [HAS SWITCH] min_etf_agreement -- drop an ETF from its theme's reference
+    # set when it disagrees too much with its sibling ETFs in that theme.
+    # Agreement = mean pairwise cosine similarity between an ETF's sparsified
+    # factor loading vector and those of the other ETFs defining the same theme.
+    #
+    # WHY THIS EXISTS: the 6d diagnostic (30 Jul 2026 run, 18 rebalances, 11
+    # themes) found THEME-level median ETF agreement correlated +0.82 with
+    # median forward rank IC -- by far the strongest predictor of whether a
+    # theme ranks usefully. Every theme with agreement >= 0.69 had POSITIVE
+    # rank IC (Water 0.80, Cybersecurity 0.92, Timber 0.87, Defense 0.86,
+    # Clean Energy 0.69); every theme <= 0.53 had NEGATIVE rank IC (Fintech
+    # 0.53, AI Infra 0.44, Critical Minerals 0.43, Agribusiness 0.33, US
+    # Infrastructure 0.31). Notably ETF R2 was UNCORRELATED with rank IC
+    # (-0.10), so this is specifically about ETFs disagreeing on what the theme
+    # is, not about data quality.
+    #
+    # WHY 0.4 AND NOT 0.6: an initial 0.6 was read off those THEME-level
+    # medians, but this filter acts on INDIVIDUAL ETFs, and sparsification
+    # (top_factors cut) pushes per-ETF pairwise cosine systematically lower.
+    # The actual per-ETF distribution across 432 observations in 3+ ETF themes:
+    #   mean 0.58, median 0.59, 25th pct 0.44, min -0.21, max 0.99
+    # Share of ETFs dropped at each threshold:
+    #   0.3 -> 10.4%   0.4 -> 19.7%   0.5 -> 33.8%   0.6 -> 51.6%   0.7 -> 66.4%
+    # 0.6 would cut at the median (half the reference universe), which is not
+    # trimming dissenters. 0.4 sits just under the 25th percentile: it removes
+    # the genuinely dissenting tail while leaving most themes with 2-3 ETFs.
+    # Above 0.5, 3-ETF themes frequently collapse to a single ETF, defeating
+    # the ensemble-averaging the method relies on.
+    #
+    # 0.0 = OFF (excludes nothing, reproduces prior behaviour exactly).
+    # Set to 0.4 to test the hypothesis.
+    min_etf_agreement: float = 0.0
+
     # Use the 75th percentile distance so one close ETF cannot hide a poor match.
     reference_distance_quantile: float = 0.75
     max_relative_distance: Optional[float | Mapping[str, float]] = None
@@ -242,8 +275,19 @@ def build_theme_reference_sets(
     min_etf_adjusted_r2: float = 0.05,
     min_obs: int = 52,
     n_jobs: int = 1,
+    min_etf_agreement: float = 0.0,
 ) -> Dict[str, dict]:
-    """Build separate ETF reference vectors for each theme."""
+    """Build separate ETF reference vectors for each theme.
+
+    min_etf_agreement : [HAS SWITCH] see MatchingConfig.min_etf_agreement for
+        the full rationale. 0.0 = off (prior behaviour). Above 0.0, an ETF is
+        dropped from its theme when its mean pairwise cosine similarity to the
+        other ETFs in that theme falls below the threshold, so a dissenting ETF
+        cannot blur the theme's averaged fingerprint. Applied AFTER the R2
+        filters and only when a theme has 3+ surviving ETFs, since with 2 ETFs
+        the "disagreeing one" is not identifiable -- they simply disagree with
+        each other, and dropping one arbitrarily would pick a winner at random.
+    """
 
     fitted = fit_factor_loadings(
         etf_returns,
@@ -285,6 +329,34 @@ def build_theme_reference_sets(
                 for ticker in available
             ]
         )
+
+        # [HAS SWITCH] drop ETFs that disagree with their siblings on what the
+        # theme is. Only meaningful with 3+ ETFs -- with 2, disagreement is
+        # mutual and there is no principled way to say which one is the outlier.
+        dropped_for_agreement: list = []
+        if min_etf_agreement > 0.0 and len(available) >= 3:
+            norms = np.linalg.norm(sparse, axis=1)
+            safe_norms = np.where(norms > 0, norms, np.nan)
+            cos_matrix = (sparse @ sparse.T) / np.outer(safe_norms, safe_norms)
+            np.fill_diagonal(cos_matrix, np.nan)
+            agreement = np.nanmean(cos_matrix, axis=1)
+
+            keep_mask = agreement >= min_etf_agreement
+            # Never drop everything: if no ETF clears the bar, keep the single
+            # best-agreeing one rather than deleting the theme outright.
+            if not keep_mask.any():
+                keep_mask = np.zeros(len(available), dtype=bool)
+                keep_mask[int(np.nanargmax(agreement))] = True
+
+            if not keep_mask.all():
+                dropped_for_agreement = [
+                    (available[i], round(float(agreement[i]), 3))
+                    for i in range(len(available))
+                    if not keep_mask[i]
+                ]
+                available = [t for t, k in zip(available, keep_mask) if k]
+                sparse = sparse[keep_mask]
+
         medoid_position = _theme_medoid(sparse, factor_cov)
 
         references[str(theme)] = {
@@ -297,6 +369,8 @@ def build_theme_reference_sets(
             # Used only to build a consensus benchmark, not for matching.
             "consensus_beta": np.mean(sparse, axis=0),
             "factor_columns": factor_cols,
+            # [HAS SWITCH] audit trail: which ETFs the agreement filter removed.
+            "dropped_for_agreement": dropped_for_agreement,
         }
 
     return references
