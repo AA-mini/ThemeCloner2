@@ -298,6 +298,18 @@ def evaluate_forward_period(
         else:
             raw_etf_blend_return = np.nan
 
+        # Residual period returns -- like-for-like with what the method targets.
+        basket_residual_return = (
+            float((1.0 + residual_basket.dropna()).prod() - 1.0)
+            if residual_basket.notna().any()
+            else np.nan
+        )
+        etf_blend_residual = benchmark_set.get("etf_blend")
+        if etf_blend_residual is not None and len(etf_blend_residual) and etf_blend_residual.notna().any():
+            etf_blend_residual_return = float((1.0 + etf_blend_residual.dropna()).prod() - 1.0)
+        else:
+            etf_blend_residual_return = np.nan
+
         indexed = detail.set_index("ticker")
         rank_ic_beta = _rank_ic(
             indexed["rank_score"],
@@ -351,6 +363,8 @@ def evaluate_forward_period(
                 "basket_residual_etf_corr": basket_etf_corr,
                 "raw_basket_period_return": raw_period_return,
                 "raw_etf_blend_period_return": raw_etf_blend_return,
+                "basket_residual_period_return": basket_residual_return,
+                "etf_blend_residual_period_return": etf_blend_residual_return,
                 "n_benchmark_etfs": len(benchmark_set.get("etfs", [])),
             }
         )
