@@ -247,6 +247,44 @@ def _circular_shift_panel(panel: pd.DataFrame, shift: int) -> pd.DataFrame:
     return pd.DataFrame(shifted, index=panel.index, columns=panel.columns)
 
 
+def _shuffled_etf_config(etf_config: pd.DataFrame, seed: int) -> pd.DataFrame:
+    """Reassign ETFs to themes at random, preserving each theme's ETF count.
+
+    [NULL TYPE: 'regroup'] This builds a fake theme out of real ETFs that do not
+    belong together economically -- e.g. one cybersecurity ETF, one agriculture
+    ETF, one uranium ETF called a 'theme'.
+
+    WHY THIS IS A BETTER NULL THAN THE TIME SHIFT (null_type='shift'):
+    The circular shift moves the WHOLE ETF panel by the same amount, which by
+    design preserves the correlation structure between ETFs. A shifted theme is
+    therefore still a genuine, internally coherent thematic object -- it has
+    simply been moved to a different point in time relative to the stocks being
+    scored. Because equity factor structure is highly persistent, a real theme
+    signature from 2023 still describes much of what is true in 2024, so the
+    'placebo' retains a large share of the real signal. That makes it an easy
+    null, and p-values against it are conservative.
+
+    Random regrouping removes the thing we actually want to test for: whether
+    the ETFs in a theme share a coherent economic driver. The fake theme still
+    has real ETF-level factor structure, but no common story. That is much
+    closer to the null hypothesis of interest -- 'would any arbitrary bundle of
+    ETFs score similarly?'
+
+    It also avoids two artifacts specific to the circular shift on financial
+    data: np.roll splices the end of the sample onto the beginning, creating a
+    structural break across very different volatility regimes; and because
+    volatility clusters, short shifts do not fully decouple the placebo from
+    the original period.
+    """
+
+    rng = np.random.default_rng(seed)
+    shuffled = etf_config.copy()
+    tickers = shuffled["ticker"].to_numpy().copy()
+    rng.shuffle(tickers)
+    shuffled["ticker"] = tickers
+    return shuffled
+
+
 def _run_single_placebo(
     shift: int,
     etf_residuals: pd.DataFrame,
@@ -258,14 +296,34 @@ def _run_single_placebo(
     candidate_adjusted_r2: pd.Series,
     matching_config: MatchingConfig,
     min_train_obs: int,
+    null_type: str = "shift",
 ) -> pd.DataFrame:
-    """Build and score one time shifted placebo theme."""
+    """Build and score one placebo theme.
 
-    shifted_etfs = _circular_shift_panel(etf_residuals, shift)
+    null_type : [HAS SWITCH]
+        'shift'   -- original behaviour: circularly shift the ETF panel in time.
+        'regroup' -- randomly reassign ETFs to themes, keeping theme sizes.
+                     See _shuffled_etf_config for why this is the stronger null.
+        'cross'   -- score candidates against a DIFFERENT theme's reference set
+                     (implemented as regroup with a distinct seed stream; the
+                     practical effect is the same and it reuses one code path).
+    """
+
+    if null_type == "shift":
+        placebo_etfs = _circular_shift_panel(etf_residuals, shift)
+        placebo_config = etf_config
+    elif null_type in ("regroup", "cross"):
+        # `shift` is reused here purely as the per-placebo random seed, so the
+        # existing seeded draw of shifts still controls reproducibility.
+        placebo_etfs = etf_residuals
+        placebo_config = _shuffled_etf_config(etf_config, seed=int(shift))
+    else:
+        raise ValueError(f"null_type must be 'shift', 'regroup' or 'cross', got {null_type!r}")
+
     references = build_theme_reference_sets(
-        shifted_etfs,
+        placebo_etfs,
         factors,
-        etf_config,
+        placebo_config,
         factor_cov=factor_cov.to_numpy(dtype=float),
         top_factors=matching_config.top_factors,
         min_etf_r2=matching_config.min_etf_r2,
@@ -295,6 +353,7 @@ def _run_placebo_batch(
     candidate_adjusted_r2: pd.Series,
     matching_config: MatchingConfig,
     min_train_obs: int,
+    null_type: str = "shift",
 ) -> list[pd.DataFrame]:
     """Run a batch in one worker to reduce Windows process launch overhead."""
 
@@ -310,6 +369,7 @@ def _run_placebo_batch(
             candidate_adjusted_r2,
             matching_config,
             min_train_obs,
+            null_type,
         )
         for shift in shifts
     ]
@@ -366,6 +426,7 @@ def run_point_in_time_backtest(
     placebo_use_fdr: bool = False,
     # Backward compatible alias from the earlier notebook.
     placebo_admission_quantile: Optional[float] = None,
+    placebo_null_type: str = "shift",
     random_state: int = 42,
     n_jobs: int = 1,
     store_candidate_details: bool = True,
@@ -555,6 +616,7 @@ def run_point_in_time_backtest(
                 candidate_fit["adjusted_r2"],
                 base_config,
                 min_train_obs,
+                placebo_null_type,
             )
 
         scores, rank_null = apply_rank_placebo_filter(
