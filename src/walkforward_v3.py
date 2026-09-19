@@ -430,9 +430,17 @@ def run_point_in_time_backtest(
     random_state: int = 42,
     n_jobs: int = 1,
     store_candidate_details: bool = True,
+    keep_factor_history: bool = False,
     verbose: bool = True,
 ) -> Dict[str, object]:
-    """Run point in time discovery and forward exposure evaluation."""
+    """Run point in time discovery and forward exposure evaluation.
+
+    keep_factor_history : if True, also return the objects fitted at each
+        rebalance date (factor loadings, stock betas, in-sample factor
+        returns) and the out-of-sample residuals and factor returns for each
+        forward window, under results["factor_history"]. Use
+        export_factor_history() to write them to Parquet.
+    """
 
     if placebo_admission_quantile is not None:
         placebo_pvalue_max = float(placebo_admission_quantile)
@@ -453,6 +461,16 @@ def run_point_in_time_backtest(
     reference_distance_frames = []
     overlap_rows = []
     timing_rows = []
+    history: Dict[str, list] = {
+        "rppca_loadings": [],
+        "insample_factors": [],
+        "cov_betas": [],
+        "target_betas": [],
+        "oos_factors": [],
+        "oos_cov_residuals": [],
+        "oos_etf_residuals": [],
+        "oos_target_residuals": [],
+    }
 
     for period_number, rebalance_date in enumerate(dates):
         next_date = (
@@ -706,6 +724,20 @@ def run_point_in_time_backtest(
         )
         target_forward_raw = target_returns_raw.loc[forward_mask_target]
 
+        if keep_factor_history:
+            _record_factor_history(
+                history,
+                rebalance_date,
+                rppca_result,
+                cov_fit["residuals"],
+                candidate_fit,
+                forward_factors,
+                cov_forward_residuals,
+                etf_forward_residuals,
+                target_forward_residuals,
+                min_train_obs,
+            )
+
         benchmarks = build_forward_theme_benchmarks(
             forward_factors,
             etf_forward_residuals,
@@ -831,4 +863,107 @@ def run_point_in_time_backtest(
         "timings": pd.DataFrame(timing_rows),
         "forward_returns_secondary": forward_returns,
         "equity_curves_secondary": equity_curves,
+        "factor_history": _assemble_factor_history(history) if keep_factor_history else {},
     }
+
+
+# -------------------- factor history (for export) --------------------
+
+def _stack_betas(fit: Dict[str, object], rebalance_date: pd.Timestamp) -> pd.DataFrame:
+    """One row per ticker: factor betas plus fit quality, tagged by date."""
+
+    frame = fit["betas"].copy()
+    frame["alpha"] = fit["alpha"]
+    frame["r2"] = fit["r2"]
+    frame["adjusted_r2"] = fit["adjusted_r2"]
+    frame["nobs"] = fit["nobs"]
+    frame.index.name = "ticker"
+    frame = frame.reset_index()
+    frame.insert(0, "rebalance_date", rebalance_date)
+    return frame
+
+
+def _record_factor_history(
+    history: Dict[str, list],
+    rebalance_date: pd.Timestamp,
+    rppca_result: Dict[str, object],
+    cov_train_residuals: pd.DataFrame,
+    candidate_fit: Dict[str, object],
+    forward_factors: pd.DataFrame,
+    cov_forward_residuals: pd.DataFrame,
+    etf_forward_residuals: pd.DataFrame,
+    target_forward_residuals: pd.DataFrame,
+    min_train_obs: int,
+) -> None:
+    """Keep what was fitted at one rebalance date and its forward window."""
+
+    loadings = rppca_result["loadings"].copy()
+    loadings.index.name = "ticker"
+    loadings = loadings.reset_index()
+    loadings.insert(0, "rebalance_date", rebalance_date)
+    history["rppca_loadings"].append(loadings)
+
+    insample = rppca_result["factors"].copy()
+    insample.index.name = "date"
+    insample = insample.reset_index()
+    insample.insert(0, "rebalance_date", rebalance_date)
+    history["insample_factors"].append(insample)
+
+    # Betas of the covariance universe on this window's factors. Same
+    # regression as for target stocks, so the two tables are comparable.
+    cov_fit = fit_factor_loadings(
+        cov_train_residuals,
+        rppca_result["factors"],
+        min_obs=min_train_obs,
+    )
+    history["cov_betas"].append(_stack_betas(cov_fit, rebalance_date))
+    history["target_betas"].append(_stack_betas(candidate_fit, rebalance_date))
+
+    # Forward windows do not overlap, so each date belongs to one rebalance.
+    for key, panel in (
+        ("oos_factors", forward_factors),
+        ("oos_cov_residuals", cov_forward_residuals),
+        ("oos_etf_residuals", etf_forward_residuals),
+        ("oos_target_residuals", target_forward_residuals),
+    ):
+        tagged = panel.copy()
+        tagged.index.name = "date"
+        tagged.insert(0, "rebalance_date", rebalance_date)
+        history[key].append(tagged)
+
+
+def _assemble_factor_history(history: Dict[str, list]) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+    for key, frames in history.items():
+        if not frames:
+            out[key] = pd.DataFrame()
+        elif key.startswith("oos_"):
+            out[key] = pd.concat(frames, axis=0).sort_index()
+        else:
+            out[key] = pd.concat(frames, axis=0, ignore_index=True)
+    return out
+
+
+def export_factor_history(results: Dict[str, object], data_dir: str) -> list[str]:
+    """Write results["factor_history"] to data_dir as wf_*.parquet files."""
+
+    import os
+
+    history = results.get("factor_history") or {}
+    if not history:
+        raise ValueError(
+            "results has no factor history; rerun the backtest with "
+            "keep_factor_history=True."
+        )
+    os.makedirs(data_dir, exist_ok=True)
+    written = []
+    for key, frame in history.items():
+        if frame.empty:
+            continue
+        frame = frame.copy()
+        frame.columns = frame.columns.astype(str)
+        path = os.path.join(data_dir, f"wf_{key}.parquet")
+        frame.to_parquet(path)
+        written.append(path)
+        print(f"saved wf_{key:22s} {frame.shape}")
+    return written
